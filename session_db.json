@@ -3,9 +3,9 @@
     {
       "id": "2027934342:2027934342",
       "data": {
-        "admin": true,
+        "slotId": 5,
         "eventId": 3,
-        "slotId": 1
+        "free": 8
       }
     }
   ]

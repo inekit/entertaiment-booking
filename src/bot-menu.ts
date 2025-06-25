@@ -15,10 +15,10 @@ export function getAdminMenu() {
   ]).resize();
 }
 
-export function getEventsInline(events: Event[]) {
+export function getEventsInline(events: Event[],isAdminMode?:boolean) {
   return Markup.inlineKeyboard(
     events.map((event) => [
-      Markup.button.callback(event.title, `event_${event.id}`),
+      Markup.button.callback(event.title, `event${isAdminMode?'_admin':''}_${event.id}`),
     ]),
   );
 }
@@ -32,7 +32,7 @@ export function getEventInfo(event: Event, freePlaces: number, slots: TimeSlot[]
   return text;
 }
 
-export function getSlotsInlineWithCounts(slots: TimeSlot[], slotCounts: Record<number, number>, disabledSlotIds: number[] = [], slotCapacity?: number) {
+export function getSlotsInlineWithCounts(slots: TimeSlot[], isAdminMode:boolean, slotCounts: Record<number, number>, disabledSlotIds: number[] = [], slotCapacity?: number) {
   const rows = slots.map((slot) => [
     (() => {
       const used = slotCounts[slot.id] || 0;
@@ -48,7 +48,7 @@ export function getSlotsInlineWithCounts(slots: TimeSlot[], slotCounts: Record<n
         free !== undefined
           ? `${timeStr} (свободно: ${free})`
           : `${timeStr}`,
-        `slot_${slot.id}`,
+        `slot${isAdminMode?'_admin':''}_${slot.id}`,
       );
     })(),
   ]);
@@ -57,14 +57,14 @@ export function getSlotsInlineWithCounts(slots: TimeSlot[], slotCounts: Record<n
   return Markup.inlineKeyboard(rows);
 }
 
-export function getPeopleCountInline(max: number) {
+export function getPeopleCountInline(max: number,eventId:number) {
   const buttons = [];
   const limit = Math.min(4, max);
   for (let i = 1; i <= limit; i++) {
     buttons.push(Markup.button.callback(`${i}`, `people_${i}`));
   }
   // Кнопка назад
-  buttons.push(Markup.button.callback('⬅️ Назад', 'back_to_slots'));
+  buttons.push(Markup.button.callback('⬅️ Назад', `event_${eventId}`));
   return Markup.inlineKeyboard([buttons]);
 }
 

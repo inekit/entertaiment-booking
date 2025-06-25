@@ -84,12 +84,12 @@ bot.hears('👑 Админ-панель', async (ctx) => {
   if (!ctx.from || ctx.from.id !== Number(process.env.ADMIN_ID)) return;
   const events = await Event.findAll();
   if (!events.length) return ctx.reply('Нет мероприятий.');
-  await ctx.reply('Выберите мероприятие для просмотра:', getEventsInline(events));
+  await ctx.reply('Выберите мероприятие для просмотра:', getEventsInline(events,true));
   ctx.session = { admin: true };
 });
 
 // Выбор мероприятия в админ-режиме
-bot.action(/event_(\d+)/, async (ctx, next) => {
+bot.action(/event_admin_(\d+)/, async (ctx, next) => {
   if (ctx.session && ctx.session.admin && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
     const eventId = Number(ctx.match[1]);
     const event = await Event.findByPk(eventId);
@@ -97,7 +97,7 @@ bot.action(/event_(\d+)/, async (ctx, next) => {
     if (!slots.length) return ctx.editMessageText('Нет слотов для этого мероприятия.');
     await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
       parse_mode: 'Markdown',
-      ...getSlotsInlineWithCounts(slots, {}, [], 0),
+      ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
     });
     ctx.session.eventId = eventId;
     return;
@@ -106,7 +106,7 @@ bot.action(/event_(\d+)/, async (ctx, next) => {
 });
 
 // Выбор слота в админ-режиме
-bot.action(/slot_(\d+)/, async (ctx, next) => {
+bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
   if (ctx.session && ctx.session.admin && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
     const slotId = Number(ctx.match[1]);
     const slot = await TimeSlot.findByPk(slotId);
@@ -137,11 +137,9 @@ bot.action(/slot_(\d+)/, async (ctx, next) => {
 
 // Главное меню
 bot.hears('🗓 Мероприятия и запись', async (ctx) => {
-  // Для админа открываем обычное меню пользователя
   const events = await Event.findAll();
   if (!events.length) return ctx.reply('Нет доступных мероприятий.');
-  // Если это callback (editMessageText), иначе reply
-  if (ctx.updateType === 'callback_query') {
+  if (ctx.callbackQuery) {
     await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
   } else {
     await ctx.reply('Выберите мероприятие:', getEventsInline(events));
@@ -186,7 +184,7 @@ bot.action(/event_(\d+)/, async (ctx) => {
   }
   await ctx.editMessageText(getEventInfo(event, free, slots), {
     parse_mode: 'Markdown',
-    ...getSlotsInlineWithCounts(slots, slotCounts, disabledSlotIds, event.capacity),
+    ...getSlotsInlineWithCounts(slots, false,slotCounts, disabledSlotIds, event.capacity),
   });
 });
 
@@ -211,7 +209,7 @@ bot.action(/slot_(\d+)/, async (ctx) => {
   const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${slot.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${slot.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   await ctx.editMessageText(`${slotInfo}\n\nСколько человек записать? (свободно: ${free})`, {
     parse_mode: 'Markdown',
-    ...getPeopleCountInline(free),
+    ...getPeopleCountInline(free,event.id),
   });
   ctx.session = { slotId, eventId: event.id, free };
 });
@@ -309,6 +307,19 @@ bot.action('back_to_events', async (ctx) => {
 });
 
 // Кнопка назад к списку слотов в админ-панели
+bot.action('back_to_slots', async (ctx) => {
+  const session = ctx.session || {};
+  if (!session.eventId) return ctx.answerCbQuery('Сначала выберите мероприятие');
+  const event = await Event.findByPk(session.eventId);
+  const slots = await TimeSlot.findAll({ where: { event_id: session.eventId } });
+  await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
+    parse_mode: 'Markdown',
+    ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
+  });
+});
+
+
+// Кнопка назад к списку слотов в админ-панели
 bot.action('admin_back_to_slots', async (ctx) => {
   const session = ctx.session || {};
   if (!session.eventId) return ctx.answerCbQuery('Сначала выберите мероприятие');
@@ -316,7 +327,7 @@ bot.action('admin_back_to_slots', async (ctx) => {
   const slots = await TimeSlot.findAll({ where: { event_id: session.eventId } });
   await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
     parse_mode: 'Markdown',
-    ...getSlotsInlineWithCounts(slots, {}, [], 0),
+    ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
   });
 });
 
