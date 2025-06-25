@@ -99,7 +99,7 @@ async function importEventsIfNeeded(sequelize: Sequelize) {
           url: '',
         },*/
         host: '127.0.0.1',
-        port: 3000,
+        port: +(process.env.PORT ?? 3030),
       },
       //allowedUpdates: allowed_updates,
       dropPendingUpdates: true,
