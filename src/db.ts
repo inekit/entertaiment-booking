@@ -3,6 +3,7 @@ import { User } from './models/user.model';
 import { Event } from './models/event.model';
 import { TimeSlot } from './models/timeslot.model';
 import { Booking } from './models/booking.model';
+require('dotenv').config()
 
 export const sequelize = new Sequelize({
   dialect: 'postgres',
