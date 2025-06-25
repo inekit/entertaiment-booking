@@ -66,38 +66,10 @@ async function importEventsIfNeeded(sequelize: Sequelize) {
 
     console.log(secretPath);
 
-    /*const tlsOptions = {
-      key: fs.readFileSync("/etc/ssl/certs/rootCA.key"),
-      cert: fs.readFileSync("/etc/ssl/certs/rootCA.crt"),
-      ca: [fs.readFileSync("/etc/ssl/certs/rootCA.crt")],
-    };*/
-
-    /*bot.telegram
-      .setWebhook(`${process.env.SERVER_URI}${secretPath}`, {
-        certificate: { source: ''},//fs.readFileSync("/etc/ssl/certs/rootCA.crt") },
-        allowed_updates,
-        drop_pending_updates: true,
-      })
-      .then((r) => {
-        console.log(r);
-      });*/
-
-    /*await bot.launch({
-      webhook: {
-        domain:'127.0.0.1',
-        path: secretPath,
-        port: 3000
-      }
-    });*/
-
     await bot.launch({
       webhook: {
         domain: process.env.SERVER_URI,
         hookPath: secretPath,
-        /*certificate: {
-          filename:"/var/www/httpd-cert/www-root/smoke-market.online_le2.crtca",
-          url: '',
-        },*/
         host: '127.0.0.1',
         port: +(process.env.PORT ?? 3030),
       },
