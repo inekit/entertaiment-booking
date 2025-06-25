@@ -15,6 +15,6 @@ export const sequelize = new Sequelize({
   models: [User, Event, TimeSlot, Booking],
   logging: true,
   sync: {
-    force: true,
+    alter: true,
   },
 }); 
