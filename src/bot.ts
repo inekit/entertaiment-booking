@@ -82,13 +82,13 @@ async function importEventsIfNeeded(sequelize: Sequelize) {
         console.log(r);
       });*/
 
-    await bot.launch({
+    /*await bot.launch({
       webhook: {
         domain:'127.0.0.1',
         path: secretPath,
         port: 3000
       }
-    });
+    });*/
 
     await bot.launch({
       webhook: {
