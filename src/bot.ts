@@ -7,11 +7,17 @@ import { Event } from './models/event.model';
 import { TimeSlot } from './models/timeslot.model';
 import { Booking } from './models/booking.model';
 import { User } from './models/user.model';
+import { UpdateType } from 'telegraf/typings/telegram-types';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Sequelize } from 'sequelize-typescript';
 
 const bot = new Telegraf(process.env.BOT_TOKEN!);
 
 // Подключаем session
 bot.use((new LocalSession({ database: 'session_db.json' })).middleware());
+
+const allowed_updates:UpdateType[] = ["message", "callback_query", "chat_member"];
 
 // Расширяем типизацию контекста для session
 declare module 'telegraf/typings/context' {
@@ -25,17 +31,87 @@ declare module 'telegraf/typings/context' {
   }
 }
 
+async function importEventsIfNeeded(sequelize: Sequelize) {
+  if (process.env.IMPORT_EVENTS === '1') {
+    const sqlPath = path.join(__dirname, '../sql/events_import.sql');
+    if (fs.existsSync(sqlPath)) {
+      const sql = fs.readFileSync(sqlPath, 'utf-8');
+      try {
+        await sequelize.query(sql);
+        console.log('Импорт мероприятий из events_import.sql выполнен!');
+      } catch (e) {
+        console.error('Ошибка импорта мероприятий:', e);
+      }
+    } else {
+      console.warn('Файл events_import.sql не найден!');
+    }
+  }
+}
+
 (async () => {
   try {
     await sequelize.authenticate();
     await sequelize.sync();
+    await importEventsIfNeeded(sequelize);
     console.log('База данных успешно подключена и синхронизирована!');
   } catch (error) {
     console.error('Ошибка подключения к базе данных:', error);
     process.exit(1);
   }
 
-  bot.launch();
+  if (process.env.NODE_ENV === "production") {
+    bot.catch(console.error);
+
+    const secretPath = `/clothes/telegraf/${bot.secretPathComponent()}`;
+
+    console.log(secretPath);
+
+    /*const tlsOptions = {
+      key: fs.readFileSync("/etc/ssl/certs/rootCA.key"),
+      cert: fs.readFileSync("/etc/ssl/certs/rootCA.crt"),
+      ca: [fs.readFileSync("/etc/ssl/certs/rootCA.crt")],
+    };*/
+
+    /*bot.telegram
+      .setWebhook(`${process.env.SERVER_URI}${secretPath}`, {
+        certificate: { source: ''},//fs.readFileSync("/etc/ssl/certs/rootCA.crt") },
+        allowed_updates,
+        drop_pending_updates: true,
+      })
+      .then((r) => {
+        console.log(r);
+      });*/
+
+    await bot.launch({
+      webhook: {
+        domain:'127.0.0.1',
+        path: secretPath,
+        port: 3000
+      }
+    });
+
+    await bot.launch({
+      webhook: {
+        domain: process.env.SERVER_URI,
+        hookPath: secretPath,
+        /*certificate: {
+          filename:"/var/www/httpd-cert/www-root/smoke-market.online_le2.crtca",
+          url: '',
+        },*/
+        host: '127.0.0.1',
+        port: 3000,
+      },
+      //allowedUpdates: allowed_updates,
+      dropPendingUpdates: true,
+    });
+
+    console.log(await bot.telegram.getWebhookInfo());
+  } else {
+    await bot.launch({
+      allowedUpdates: allowed_updates,
+      dropPendingUpdates: true,
+    });
+  }
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
