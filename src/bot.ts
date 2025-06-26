@@ -388,16 +388,16 @@ bot.action('add_friend', async (ctx) => {
   let sentMessage
   if (ctx.callbackQuery && ctx.callbackQuery.message) {
     try {
-        sentMessage = await ctx.editMessageText('Введите имя и фамилию друга:', {
+        sentMessage = await ctx.editMessageText('Введите имя и фамилию участника:', {
         ...Markup.inlineKeyboard([
           [Markup.button.callback('⬅️ Назад', `basket_back_${session.eventId}`)]
         ]),
       });
     } catch (e) {
-        sentMessage = await ctx.reply('Введите имя и фамилию друга:');
+        sentMessage = await ctx.reply('Введите имя и фамилию участника:');
     }
   } else {
-    sentMessage = await ctx.reply('Введите имя и фамилию друга:');
+    sentMessage = await ctx.reply('Введите имя и фамилию участника:');
   }
 
   ctx.session.lastMessageId = sentMessage.message_id
@@ -450,7 +450,7 @@ async function backToBasket(ctx: Context,isEdit?:boolean){
 bot.on('text', async (ctx, next) => {
   if (ctx.session && ctx.session.addingFriend) {
     const name = ctx.message.text.trim();
-    if (!name) return ctx.reply('Имя не может быть пустым. Введите имя и фамилию друга:');
+    if (!name) return ctx.reply('Имя не может быть пустым. Введите имя и фамилию участника:');
     ctx.session.friends = ctx.session.friends || [];
     if (ctx.session.friends.length >= ctx.session.free) {
       ctx.session.addingFriend = false;
@@ -458,7 +458,7 @@ bot.on('text', async (ctx, next) => {
     }
     ctx.session.friends.push(name);
     ctx.session.addingFriend = false;
-    // Удаляем сообщение "Введите имя и фамилию друга:" если оно было
+    // Удаляем сообщение "Введите имя и фамилию участника:" если оно было
     if (ctx.message.reply_to_message && ctx.message.reply_to_message.message_id) {
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
