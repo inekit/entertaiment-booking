@@ -76,12 +76,13 @@ export function getParticipantsList(participants: { name: string; telegram_id: n
   if (!participants.length) return 'Нет записавшихся на этот слот.';
   const text = participants
     .map((p, i) => {
+      let names = [p.name || 'Без имени'];
+      if (p.friends_names && p.friends_names.length) {
+        names = names.concat(p.friends_names);
+      }
       let base = `${i + 1}. `;
       if (p.subslot_title) base += `[${p.subslot_title}] `;
-      base += `${p.name || 'Без имени'} (id: ${p.telegram_id}) — всего: ${p.friends_count + 1}`;
-      if (p.friends_names && p.friends_names.length) {
-        base += '\n   └ Друзья: ' + p.friends_names.join(', ');
-      }
+      base += `Участники: ${names.join(', ')} (id: ${p.telegram_id})`;
       return base;
     })
     .join('\n');

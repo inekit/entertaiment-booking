@@ -31,6 +31,7 @@ declare module 'telegraf/typings/context' {
       admin?: boolean;
       friends?: string[];
       addingFriend?: boolean;
+      lastMessageId?:number
     };
   }
 }
@@ -149,7 +150,9 @@ bot.hears('👑 Админ-панель', async (ctx) => {
 
 // Выбор мероприятия в админ-режиме
 bot.action(/event_admin_(\d+)/, async (ctx, next) => {
-  if (ctx.session && ctx.session.admin && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+
+  if (ctx.session &&  ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+
     const eventId = Number(ctx.match[1]);
     const event = await Event.findByPk(eventId);
     const slots = await TimeSlot.findAll({ where: { event_id: eventId } });
@@ -185,7 +188,7 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
 
 // Выбор слота в админ-режиме
 bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
-  if (ctx.session && ctx.session.admin && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+  if (ctx.session && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
     const slotId = Number(ctx.match[1]);
     const slot = await TimeSlot.findByPk(slotId);
     const event = slot ? await Event.findByPk(slot.event_id) : null;
@@ -285,20 +288,30 @@ bot.action('disabled_slot', async (ctx) => {
 });
 
 // Меню для записи с друзьями
-function getBookingMenu(free: number, friends: string[],eventId:number) {
+function getBookingMenu(free: number, friends: string[], eventId: number) {
   let text = `Список участников:\n`;
-  text += `1. Вы (основной участник)`;
-  friends.forEach((name, i) => {
-    text += `\n${i + 2}. ${name}`;
-  });
-  text += `\n\nСвободно еще мест: ${free - friends.length - 1}`;
+  if (friends.length === 0) {
+    text += '_Пока никто не добавлен_';
+  } else {
+    friends.forEach((name, i) => {
+      text += `\n${i + 1}. ${name}`;
+    });
+  }
+  const realFreePlaces = free - friends.length;
+  text += `\n\nСвободно еще мест: ${realFreePlaces}`;
+  text += `\n\nДобавьте себя и/или друзей. Каждый участник должен быть добавлен по отдельности.`;
+  text += `\n\nКогда все участники добавлены, нажмите ✅ для подтверждения.`;
+
+  const buttons = [
+    ...(friends.length > 0 ? [[Markup.button.callback('✅ Подтвердить запись', 'confirm_booking')] ] : []),
+    [Markup.button.callback('👨 Добавить участника', 'add_friend')],
+    [Markup.button.callback('⬅️ Назад', `event_${eventId}`)],
+  ];
+  if (realFreePlaces === 0) buttons.splice(1, 1);
+
   return {
     text,
-    keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('Записаться', 'confirm_booking')],
-      [Markup.button.callback('Добавить друга', 'add_friend')],
-      [Markup.button.callback('⬅️ Назад',`event_${eventId}`)],
-    ]),
+    keyboard: Markup.inlineKeyboard(buttons),
   };
 }
 
@@ -343,7 +356,9 @@ bot.action(/slot_(\d+)/, async (ctx) => {
   });
   buttons.push([Markup.button.callback('⬅️ Назад', `event_${event.id}`)]);
   await ctx.editMessageText(
-    `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\n\nВыберите команду/лодку/катамаран:`,
+    `*${event.title}*\n${event.description ? event.description + '\n' : ''
+    }Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\n\nВыберите ${ 
+      event.id === 8? 'команду': event.id === 1?'лодку':'катамаран'}:`,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard(buttons),
@@ -355,12 +370,67 @@ bot.action(/slot_(\d+)/, async (ctx) => {
 // Добавить друга
 bot.action('add_friend', async (ctx) => {
   const session = ctx.session || {};
-  if (!session.slotId || !session.eventId || session.friends?.length >= session.free-1) {
+  if (!session.slotId || !session.eventId || session.friends?.length >= session.free) {
     return ctx.answerCbQuery('Больше добавить нельзя!');
   }
   ctx.session.addingFriend = true;
-  await ctx.reply('Введите имя и фамилию друга:');
+
+  let sentMessage
+  if (ctx.callbackQuery && ctx.callbackQuery.message) {
+    try {
+        sentMessage = await ctx.editMessageText('Введите имя и фамилию друга:', {
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('⬅️ Назад', `basket_back_${session.eventId}`)]
+        ]),
+      });
+    } catch (e) {
+        sentMessage = await ctx.reply('Введите имя и фамилию друга:');
+    }
+  } else {
+    sentMessage = await ctx.reply('Введите имя и фамилию друга:');
+  }
+
+  ctx.session.lastMessageId = sentMessage.message_id
 });
+
+
+bot.action(/basket_back_(\d+)/, async (ctx) => {
+    await backToBasket(ctx,true)
+})
+
+
+
+async function backToBasket(ctx: Context,isEdit?:boolean){
+    // Показываем меню снова
+    const slot = await TimeSlot.findByPk(ctx.session.slotId);
+    let event = null;
+    let slotInfo = '';
+    let menu;
+
+    const reply = (isEdit? ctx.editMessageText: ctx.reply).bind(ctx)
+
+    if (ctx.session.subslotId) {
+      const subslot = await SubSlot.findByPk(ctx.session.subslotId);
+      event = slot && subslot ? await Event.findByPk(slot.event_id) : null;
+      if (!slot || !event || !subslot) return reply('Ошибка. Попробуйте выбрать слот заново.');
+      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
+      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+    } else {
+      event = slot ? await Event.findByPk(slot.event_id) : null;
+      if (!slot || !event) return reply('Ошибка. Попробуйте выбрать слот заново.');
+      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
+      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+    }
+    const sent = await reply(`${slotInfo}\n\n${menu.text}`, {
+      parse_mode: 'Markdown',
+      ...menu.keyboard,
+    });
+    if (!isEdit){
+        // Удаляем сообщение пользователя с именем
+        try { await ctx.deleteMessage(ctx.message.message_id); } catch {}  
+    }
+  
+}
 
 // Обработка ввода имени друга
 bot.on('text', async (ctx, next) => {
@@ -374,27 +444,20 @@ bot.on('text', async (ctx, next) => {
     }
     ctx.session.friends.push(name);
     ctx.session.addingFriend = false;
-    // Показываем меню снова
-    const slot = await TimeSlot.findByPk(ctx.session.slotId);
-    let event = null;
-    let slotInfo = '';
-    let menu;
-    if (ctx.session.subslotId) {
-      const subslot = await SubSlot.findByPk(ctx.session.subslotId);
-      event = slot && subslot ? await Event.findByPk(slot.event_id) : null;
-      if (!slot || !event || !subslot) return ctx.reply('Ошибка. Попробуйте выбрать слот заново.');
-      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
-      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
-    } else {
-      event = slot ? await Event.findByPk(slot.event_id) : null;
-      if (!slot || !event) return ctx.reply('Ошибка. Попробуйте выбрать слот заново.');
-      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
-      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+    // Удаляем сообщение "Введите имя и фамилию друга:" если оно было
+    if (ctx.message.reply_to_message && ctx.message.reply_to_message.message_id) {
+      try {
+        await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
+      } catch {}
     }
-    await ctx.reply(`${slotInfo}\n\n${menu.text}`, {
-      parse_mode: 'Markdown',
-      ...menu.keyboard,
-    });
+    console.log( 23,ctx.session.lastMessageId)
+
+    if (ctx.session.lastMessageId){
+        await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.lastMessageId);
+        delete ctx.session.lastMessageId
+    }
+
+    await backToBasket(ctx)
     return;
   }
   return next();
@@ -406,7 +469,10 @@ bot.action('confirm_booking', async (ctx) => {
   if (!session.slotId || !session.eventId || !session.free) {
     return ctx.reply('Пожалуйста, выберите слот заново.');
   }
-  const count = 1 + (session.friends?.length || 0);
+  if (!session.friends || session.friends.length === 0) {
+    return ctx.answerCbQuery('Добавьте хотя бы одного участника!');
+  }
+  const count = session.friends.length;
   if (count > session.free) {
     return ctx.reply('Недостаточно свободных мест!');
   }
@@ -441,7 +507,15 @@ bot.action('confirm_booking', async (ctx) => {
     friends_count: count - 1,
     friends_names: session.friends || [],
   });
-  await ctx.reply('Вы успешно записаны!');
+  if (ctx.callbackQuery && ctx.callbackQuery.message) {
+    try {
+      await ctx.editMessageText('Вы успешно записаны!');
+    } catch (e) {
+      await ctx.reply('Вы успешно записаны!');
+    }
+  } else {
+    await ctx.reply('Вы успешно записаны!');
+  }
   ctx.session = {};
 });
 
@@ -466,7 +540,7 @@ bot.hears('❌ Мои записи / Отменить запись', async (ctx)
       text += `Команда/лодка: ${subslot.title}\n`;
     }
     if (booking.friends_names && booking.friends_names.length) {
-      text += `Друзья: ${booking.friends_names.join(', ')}`;
+      text += `Участники: ${booking.friends_names.join(', ')}`;
     }
     await ctx.reply(text, {
       parse_mode: 'Markdown',
