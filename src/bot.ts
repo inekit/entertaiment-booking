@@ -262,7 +262,9 @@ bot.action(/event_(\d+)/, async (ctx) => {
       where: { user_id: ctx.state.user.id },
       include: [{ model: TimeSlot, as: 'timeslot' }],
     });
-    disabledSlotIds = slots
+    disabledSlotIds = [];
+/*
+slots
       .filter((slot) =>
         userBookings.some((b) => {
           const s = b.timeslot;
@@ -274,8 +276,10 @@ bot.action(/event_(\d+)/, async (ctx) => {
           return newStart < existEnd && newEnd > existStart;
         })
       )
-      .map((slot) => slot.id);
+      .map((slot) => slot.id);*/
   }
+
+
   await ctx.editMessageText(getEventInfo(event, free, slots), {
     parse_mode: 'Markdown',
     ...getSlotsInlineWithCounts(slots, false,slotCounts, disabledSlotIds, event.capacity),
@@ -486,6 +490,7 @@ bot.action('confirm_booking', async (ctx) => {
   if (count > session.free) {
     return ctx.reply('Недостаточно свободных мест!');
   }
+  /*
   let exists;
   if (session.subslotId) {
     exists = await Booking.findOne({
@@ -508,7 +513,7 @@ bot.action('confirm_booking', async (ctx) => {
   }
   if (exists) {
     return ctx.reply('Вы уже записаны на этот слот!');
-  }
+  }*/
   await Booking.create({
     user_id: ctx.state.user.id,
     event_id: session.eventId,
@@ -526,7 +531,10 @@ bot.action('confirm_booking', async (ctx) => {
   } else {
     await ctx.reply('Вы успешно записаны!');
   }
+
   ctx.session = {};
+  await ctx.reply('Главное меню', getMainMenu());
+
 });
 
 // Мои записи / отмена записи
