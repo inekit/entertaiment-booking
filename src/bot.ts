@@ -315,6 +315,14 @@ function getBookingMenu(free: number, friends: string[], eventId: number) {
   };
 }
 
+async function getFreePlacesCount(event:Event,slotId:number){
+    // Считаем свободные места по слоту
+    const bookings = await Booking.findAll({ where: { event_id: event.id, timeslot_id: slotId } });
+    const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
+    const free = event.capacity - used;
+    return free
+}
+
 // Выбор слота (inline)
 bot.action(/slot_(\d+)/, async (ctx) => {
   const slotId = Number(ctx.match[1]);
@@ -325,9 +333,7 @@ bot.action(/slot_(\d+)/, async (ctx) => {
   if (!event.subslots || event.subslots.length === 0) {
     // Нет SubSlot — сразу меню записи
     // Считаем свободные места по слоту
-    const bookings = await Booking.findAll({ where: { event_id: event.id, timeslot_id: slot.id } });
-    const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
-    const free = event.capacity - used;
+    const free = await getFreePlacesCount(event,slot.id);
     if (free <= 0) return ctx.answerCbQuery('Нет свободных мест на этот слот');
     ctx.session = { slotId, eventId: event.id, free, friends: [] };
     const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
@@ -414,12 +420,16 @@ async function backToBasket(ctx: Context,isEdit?:boolean){
       event = slot && subslot ? await Event.findByPk(slot.event_id) : null;
       if (!slot || !event || !subslot) return reply('Ошибка. Попробуйте выбрать слот заново.');
       slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
-      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+      const free = await getFreePlacesCount(event,slot.id);
+
+      menu = getBookingMenu(free, ctx.session.friends,event.id);
     } else {
       event = slot ? await Event.findByPk(slot.event_id) : null;
       if (!slot || !event) return reply('Ошибка. Попробуйте выбрать слот заново.');
       slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
-      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+      const free = await getFreePlacesCount(event,slot.id);
+
+      menu = getBookingMenu(free, ctx.session.friends,event.id);
     }
     const sent = await reply(`${slotInfo}\n\n${menu.text}`, {
       parse_mode: 'Markdown',
