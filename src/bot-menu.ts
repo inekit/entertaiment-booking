@@ -32,12 +32,16 @@ export function getEventInfo(event: Event, freePlaces: number, slots: TimeSlot[]
   return text;
 }
 
+function formatTime(date: Date) {
+  return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Etc/GMT0' });
+}
+
 export function getSlotsInlineWithCounts(slots: TimeSlot[], isAdminMode:boolean, slotCounts: Record<number, number>, disabledSlotIds: number[] = [], slotCapacity?: number) {
   const rows = slots.map((slot) => [
     (() => {
       const used = slotCounts[slot.id] || 0;
       const free = slotCapacity ? slotCapacity - used : undefined;
-      const timeStr = `${slot.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${slot.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const timeStr = `${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
       if (disabledSlotIds.includes(slot.id)) {
         return Markup.button.callback(
           `${timeStr} (нет мест или пересечение)`,
@@ -53,7 +57,7 @@ export function getSlotsInlineWithCounts(slots: TimeSlot[], isAdminMode:boolean,
     })(),
   ]);
   // Кнопка назад
-  rows.push([Markup.button.callback('⬅️ Назад', 'back_to_events')]);
+  rows.push([Markup.button.callback('⬅️ Назад', isAdminMode? 'admin_bta':'back_to_events')]);
   return Markup.inlineKeyboard(rows);
 }
 
@@ -68,17 +72,25 @@ export function getPeopleCountInline(max: number,eventId:number) {
   return Markup.inlineKeyboard([buttons]);
 }
 
-export function getParticipantsList(participants: { name: string; telegram_id: number; friends_count: number }[]) {
+export function getParticipantsList(participants: { name: string; telegram_id: number; friends_count: number; friends_names?: string[]; subslot_title?: string }[]) {
   if (!participants.length) return 'Нет записавшихся на этот слот.';
   const text = participants
-    .map((p, i) => `${i + 1}. ${p.name || 'Без имени'} (id: ${p.telegram_id}) — всего: ${p.friends_count + 1}`)
+    .map((p, i) => {
+      let base = `${i + 1}. `;
+      if (p.subslot_title) base += `[${p.subslot_title}] `;
+      base += `${p.name || 'Без имени'} (id: ${p.telegram_id}) — всего: ${p.friends_count + 1}`;
+      if (p.friends_names && p.friends_names.length) {
+        base += '\n   └ Друзья: ' + p.friends_names.join(', ');
+      }
+      return base;
+    })
     .join('\n');
   return text;
 }
 
 export function getParticipantsInlineBack() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', 'admin_back_to_slots')],
+    [Markup.button.callback('⬅️ Назад', 'admin_bts')],
   ]);
 } 
     

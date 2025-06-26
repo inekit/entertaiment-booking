@@ -172,4 +172,24 @@ INSERT INTO timeslots (event_id, start_time, end_time, created_at, updated_at) V
 (1, '2024-06-01 17:30:00', '2024-06-01 17:45:00', NOW(), NOW()),
 (1, '2024-06-01 17:45:00', '2024-06-01 18:00:00', NOW(), NOW()),
 (1, '2024-06-01 18:00:00', '2024-06-01 18:15:00', NOW(), NOW()),
-(1, '2024-06-01 18:15:00', '2024-06-01 18:30:00', NOW(), NOW()); 
+(1, '2024-06-01 18:15:00', '2024-06-01 18:30:00', NOW(), NOW());
+
+-- SubSlot для Катамаранов 🚤 (event_id = 3)
+INSERT INTO subslots (event_id, title, capacity, "order", created_at, updated_at) VALUES
+(3, 'Катамаран №1', 2, 1, NOW(), NOW()),
+(3, 'Катамаран №2', 2, 2, NOW(), NOW()),
+(3, 'Катамаран №3', 2, 3, NOW(), NOW()),
+(3, 'Катамаран №4', 2, 4, NOW(), NOW());
+
+-- SubSlot для Бадминтона 🏸 (event_id = 8)
+INSERT INTO subslots (event_id, title, capacity, "order", created_at, updated_at) VALUES
+(8, 'Комплект 1', 2, 1, NOW(), NOW()),
+(8, 'Комплект 2', 2, 2, NOW(), NOW());
+
+-- SubSlot для Лодок 🚣 (event_id = 1)
+INSERT INTO subslots (event_id, title, capacity, "order", created_at, updated_at) VALUES
+(1, 'Лодка №1', 4, 1, NOW(), NOW()),
+(1, 'Лодка №2', 4, 2, NOW(), NOW()),
+(1, 'Лодка №3', 4, 3, NOW(), NOW()),
+(1, 'Лодка №4', 4, 4, NOW(), NOW()),
+(1, 'Лодка №5 (6 мест)', 6, 5, NOW(), NOW()); 

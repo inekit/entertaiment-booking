@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from 'telegraf';
+import { Telegraf, Markup, Context } from 'telegraf';
 import { sequelize } from './db';
 require('dotenv').config()
 import LocalSession = require("telegraf-session-local")
@@ -11,6 +11,7 @@ import { UpdateType } from 'telegraf/typings/telegram-types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Sequelize } from 'sequelize-typescript';
+import { SubSlot } from './models/subslot.model';
 
 const bot = new Telegraf(process.env.BOT_TOKEN!);
 
@@ -25,8 +26,11 @@ declare module 'telegraf/typings/context' {
     session?: {
       slotId?: number;
       eventId?: number;
+      subslotId?: number;
       free?: number;
       admin?: boolean;
+      friends?: string[];
+      addingFriend?: boolean;
     };
   }
 }
@@ -128,12 +132,19 @@ _Хорошего тебе отдыха!_
   return ctx.reply(welcome, { parse_mode: 'Markdown', ...getMainMenu() });
 });
 
-bot.hears('👑 Админ-панель', async (ctx) => {
+
+async function sendAdminMenu(ctx:Context,isEdit?:boolean){
+
+const reply = (isEdit? ctx.editMessageText: ctx.reply).bind(ctx)
   if (!ctx.from || ctx.from.id !== Number(process.env.ADMIN_ID)) return;
   const events = await Event.findAll();
-  if (!events.length) return ctx.reply('Нет мероприятий.');
-  await ctx.reply('Выберите мероприятие для просмотра:', getEventsInline(events,true));
+  if (!events.length) return reply('Нет мероприятий.');
+  await reply('Выберите мероприятие для просмотра:', getEventsInline(events,true));
   ctx.session = { admin: true };
+}
+
+bot.hears('👑 Админ-панель', async (ctx) => {
+    sendAdminMenu(ctx)
 });
 
 // Выбор мероприятия в админ-режиме
@@ -142,11 +153,30 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
     const eventId = Number(ctx.match[1]);
     const event = await Event.findByPk(eventId);
     const slots = await TimeSlot.findAll({ where: { event_id: eventId } });
-    if (!slots.length) return ctx.editMessageText('Нет слотов для этого мероприятия.');
-    await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
-      parse_mode: 'Markdown',
-      ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
-    });
+    if (!slots.length) {
+      try {
+        await ctx.editMessageText('Нет слотов для этого мероприятия.');
+      } catch (e: any) {
+        if (e.description?.includes('message is not modified')) {
+          await ctx.answerCbQuery('Уже выбрано.');
+        } else {
+          throw e;
+        }
+      }
+      return;
+    }
+    try {
+      await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
+        parse_mode: 'Markdown',
+        ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
+      });
+    } catch (e: any) {
+      if (e.description?.includes('message is not modified')) {
+        await ctx.answerCbQuery('Уже выбрано.');
+      } else {
+        throw e;
+      }
+    }
     ctx.session.eventId = eventId;
     return;
   }
@@ -161,22 +191,35 @@ bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
     const event = slot ? await Event.findByPk(slot.event_id) : null;
     const bookings = await Booking.findAll({
       where: { timeslot_id: slotId },
-      include: [{ model: User, as: 'user' }],
+      include: [
+        { model: User, as: 'user' },
+        { model: SubSlot, as: 'subslot' },
+      ],
     });
     const participants = bookings.map((b) => ({
       name: b.user?.name || '',
       telegram_id: b.user?.telegram_id || 0,
       friends_count: b.friends_count,
+      friends_names: b.friends_names,
+      subslot_title: b.subslot ? b.subslot.title : undefined,
     }));
     const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
     const free = event ? event.capacity - used : 0;
     const slotInfo = slot && event
-      ? `*${event.title}*\nВремя: ${slot.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${slot.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\nСвободно мест: ${free}`
+      ? `*${event.title}*\nВремя: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nСвободно мест: ${free}`
       : '';
-    await ctx.editMessageText(`${slotInfo}\n\n${getParticipantsList(participants)}`, {
-      parse_mode: 'Markdown',
-      ...getParticipantsInlineBack(),
-    });
+    try {
+      await ctx.editMessageText(`${slotInfo}\n\n${getParticipantsList(participants)}`, {
+        parse_mode: 'Markdown',
+        ...getParticipantsInlineBack(),
+      });
+    } catch (e: any) {
+      if (e.description?.includes('message is not modified')) {
+        await ctx.answerCbQuery('Уже выбрано.');
+      } else {
+        throw e;
+      }
+    }
     ctx.session.slotId = slotId;
     return;
   }
@@ -241,65 +284,152 @@ bot.action('disabled_slot', async (ctx) => {
   await ctx.answerCbQuery('Вы не можете записаться на этот слот, так как у вас уже есть пересекающаяся запись.');
 });
 
+// Меню для записи с друзьями
+function getBookingMenu(free: number, friends: string[],eventId:number) {
+  let text = `Список участников:\n`;
+  text += `1. Вы (основной участник)`;
+  friends.forEach((name, i) => {
+    text += `\n${i + 2}. ${name}`;
+  });
+  text += `\n\nСвободно еще мест: ${free - friends.length - 1}`;
+  return {
+    text,
+    keyboard: Markup.inlineKeyboard([
+      [Markup.button.callback('Записаться', 'confirm_booking')],
+      [Markup.button.callback('Добавить друга', 'add_friend')],
+      [Markup.button.callback('⬅️ Назад',`event_${eventId}`)],
+    ]),
+  };
+}
+
 // Выбор слота (inline)
 bot.action(/slot_(\d+)/, async (ctx) => {
   const slotId = Number(ctx.match[1]);
   const slot = await TimeSlot.findByPk(slotId);
   if (!slot) return ctx.answerCbQuery('Слот не найден');
-  // Проверяем мероприятие и свободные места
-  const event = await Event.findByPk(slot.event_id);
+  const event = await Event.findByPk(slot.event_id, { include: [SubSlot] });
   if (!event) return ctx.answerCbQuery('Мероприятие не найдено');
+  if (!event.subslots || event.subslots.length === 0) {
+    // Нет SubSlot — сразу меню записи
+    // Считаем свободные места по слоту
+    const bookings = await Booking.findAll({ where: { event_id: event.id, timeslot_id: slot.id } });
+    const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
+    const free = event.capacity - used;
+    if (free <= 0) return ctx.answerCbQuery('Нет свободных мест на этот слот');
+    ctx.session = { slotId, eventId: event.id, free, friends: [] };
+    const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
+    const menu = getBookingMenu(free, [],event.id);
+    await ctx.editMessageText(`${slotInfo}\n\n${menu.text}`, {
+      parse_mode: 'Markdown',
+      ...menu.keyboard,
+    });
+    return;
+  }
+
+  console.log('slot')
+
+  // Если есть SubSlot — показываем выбор SubSlot
   const bookings = await Booking.findAll({ where: { event_id: event.id, timeslot_id: slot.id } });
-  const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
-  const free = event.capacity - used;
-  if (free <= 0) return ctx.answerCbQuery('Нет свободных мест на этот слот');
-  // Информация о мероприятии и выбранном слоте
-  const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${slot.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${slot.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  await ctx.editMessageText(`${slotInfo}\n\nСколько человек записать? (свободно: ${free})`, {
-    parse_mode: 'Markdown',
-    ...getPeopleCountInline(free,event.id),
+  const subslotCounts: Record<number, number> = {};
+  for (const subslot of event.subslots) {
+    subslotCounts[subslot.id] = bookings
+      .filter((b) => b.subslot_id === subslot.id)
+      .reduce((acc, b) => acc + b.friends_count + 1, 0);
+  }
+  const buttons = event.subslots.map((subslot) => {
+    const used = subslotCounts[subslot.id] || 0;
+    const free = subslot.capacity - used;
+    return [Markup.button.callback(`${subslot.title} (свободно: ${free})`, `s2lot_${slot.id}_${subslot.id}`)];
   });
-  ctx.session = { slotId, eventId: event.id, free };
+  buttons.push([Markup.button.callback('⬅️ Назад', `event_${event.id}`)]);
+  await ctx.editMessageText(
+    `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\n\nВыберите команду/лодку/катамаран:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard(buttons),
+    }
+  );
+  ctx.session = { slotId, eventId: event.id };
 });
 
-// Выбор количества человек (inline)
-bot.action(/people_(\d+)/, async (ctx) => {
-  const count = Number(ctx.match[1]);
+// Добавить друга
+bot.action('add_friend', async (ctx) => {
+  const session = ctx.session || {};
+  if (!session.slotId || !session.eventId || session.friends?.length >= session.free-1) {
+    return ctx.answerCbQuery('Больше добавить нельзя!');
+  }
+  ctx.session.addingFriend = true;
+  await ctx.reply('Введите имя и фамилию друга:');
+});
+
+// Обработка ввода имени друга
+bot.on('text', async (ctx, next) => {
+  if (ctx.session && ctx.session.addingFriend) {
+    const name = ctx.message.text.trim();
+    if (!name) return ctx.reply('Имя не может быть пустым. Введите имя и фамилию друга:');
+    ctx.session.friends = ctx.session.friends || [];
+    if (ctx.session.friends.length >= ctx.session.free) {
+      ctx.session.addingFriend = false;
+      return ctx.reply('Больше добавить нельзя!');
+    }
+    ctx.session.friends.push(name);
+    ctx.session.addingFriend = false;
+    // Показываем меню снова
+    const slot = await TimeSlot.findByPk(ctx.session.slotId);
+    let event = null;
+    let slotInfo = '';
+    let menu;
+    if (ctx.session.subslotId) {
+      const subslot = await SubSlot.findByPk(ctx.session.subslotId);
+      event = slot && subslot ? await Event.findByPk(slot.event_id) : null;
+      if (!slot || !event || !subslot) return ctx.reply('Ошибка. Попробуйте выбрать слот заново.');
+      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
+      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+    } else {
+      event = slot ? await Event.findByPk(slot.event_id) : null;
+      if (!slot || !event) return ctx.reply('Ошибка. Попробуйте выбрать слот заново.');
+      slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
+      menu = getBookingMenu(ctx.session.free, ctx.session.friends,event.id);
+    }
+    await ctx.reply(`${slotInfo}\n\n${menu.text}`, {
+      parse_mode: 'Markdown',
+      ...menu.keyboard,
+    });
+    return;
+  }
+  return next();
+});
+
+// Подтвердить запись
+bot.action('confirm_booking', async (ctx) => {
   const session = ctx.session || {};
   if (!session.slotId || !session.eventId || !session.free) {
     return ctx.reply('Пожалуйста, выберите слот заново.');
   }
-  if (count < 1 || count > Math.min(4, session.free)) {
-    return ctx.reply('Некорректное количество человек.');
+  const count = 1 + (session.friends?.length || 0);
+  if (count > session.free) {
+    return ctx.reply('Недостаточно свободных мест!');
   }
-  // Проверка на пересечение записей
-  const slot = await TimeSlot.findByPk(session.slotId);
-  if (!slot) return ctx.reply('Слот не найден.');
-  const userBookings = await Booking.findAll({
-    where: { user_id: ctx.state.user.id },
-    include: [{ model: TimeSlot, as: 'timeslot' }],
-  });
-  const overlap = userBookings.some((b) => {
-    const s = b.timeslot;
-    if (!s) return false;
-    const newStart = slot.start_time.getTime();
-    const newEnd = slot.end_time.getTime();
-    const existStart = s.start_time.getTime();
-    const existEnd = s.end_time.getTime();
-    return (
-      (newStart < existEnd && newEnd > existStart)
-    );
-  });
-  if (overlap) {
-    return ctx.reply('У вас уже есть запись на другой слот, пересекающийся по времени!');
+  let exists;
+  if (session.subslotId) {
+    exists = await Booking.findOne({
+      where: {
+        user_id: ctx.state.user.id,
+        event_id: session.eventId,
+        timeslot_id: session.slotId,
+        subslot_id: session.subslotId,
+      },
+    });
+  } else {
+    exists = await Booking.findOne({
+      where: {
+        user_id: ctx.state.user.id,
+        event_id: session.eventId,
+        timeslot_id: session.slotId,
+        subslot_id: null,
+      },
+    });
   }
-  const exists = await Booking.findOne({
-    where: {
-      user_id: ctx.state.user.id,
-      event_id: session.eventId,
-      timeslot_id: session.slotId,
-    },
-  });
   if (exists) {
     return ctx.reply('Вы уже записаны на этот слот!');
   }
@@ -307,9 +437,12 @@ bot.action(/people_(\d+)/, async (ctx) => {
     user_id: ctx.state.user.id,
     event_id: session.eventId,
     timeslot_id: session.slotId,
+    subslot_id: session.subslotId || null,
     friends_count: count - 1,
+    friends_names: session.friends || [],
   });
   await ctx.reply('Вы успешно записаны!');
+  ctx.session = {};
 });
 
 // Мои записи / отмена записи
@@ -319,15 +452,22 @@ bot.hears('❌ Мои записи / Отменить запись', async (ctx)
     include: [
       { model: Event, as: 'event' },
       { model: TimeSlot, as: 'timeslot' },
+      { model: SubSlot, as: 'subslot' },
     ],
   });
   if (!bookings.length) return ctx.reply('У вас нет активных записей.');
   for (const booking of bookings) {
     const event = booking.event;
     const slot = booking.timeslot;
+    const subslot = booking.subslot;
     let text = `*${event.title}*\n`;
-    text += `Время: ${slot.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${slot.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
-    text += `Количество человек: ${booking.friends_count + 1}`;
+    text += `Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\n`;
+    if (subslot) {
+      text += `Команда/лодка: ${subslot.title}\n`;
+    }
+    if (booking.friends_names && booking.friends_names.length) {
+      text += `Друзья: ${booking.friends_names.join(', ')}`;
+    }
     await ctx.reply(text, {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
@@ -351,11 +491,28 @@ bot.action(/cancel_(\d+)/, async (ctx) => {
 // Кнопка назад к списку мероприятий
 bot.action('back_to_events', async (ctx) => {
   const events = await Event.findAll();
-  await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
+  try {
+    await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
+  } catch (e: any) {
+    if (e.description?.includes('message is not modified')) {
+      await ctx.answerCbQuery('Уже выбрано.');
+    } else {
+      throw e;
+    }
+  }
 });
 
+// Кнопка назад к списку мероприятий
+bot.action('admin_bta', async (ctx) => {
+    await ctx.answerCbQuery();
+    sendAdminMenu(ctx,true)
+  });
+  
+
+
+
 // Кнопка назад к списку слотов в админ-панели
-bot.action('back_to_slots', async (ctx) => {
+bot.action('admin_bts', async (ctx) => {
   const session = ctx.session || {};
   if (!session.eventId) return ctx.answerCbQuery('Сначала выберите мероприятие');
   const event = await Event.findByPk(session.eventId);
@@ -366,17 +523,31 @@ bot.action('back_to_slots', async (ctx) => {
   });
 });
 
-
-// Кнопка назад к списку слотов в админ-панели
-bot.action('admin_back_to_slots', async (ctx) => {
-  const session = ctx.session || {};
-  if (!session.eventId) return ctx.answerCbQuery('Сначала выберите мероприятие');
-  const event = await Event.findByPk(session.eventId);
-  const slots = await TimeSlot.findAll({ where: { event_id: session.eventId } });
-  await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
+bot.action(/s2lot_(\d+)_(\d+)/, async (ctx) => {
+    console.log('sslot')
+  const slotId = Number(ctx.match[1]);
+  const subslotId = Number(ctx.match[2]);
+  const slot = await TimeSlot.findByPk(slotId);
+  const subslot = await SubSlot.findByPk(subslotId);
+  if (!slot || !subslot) return ctx.answerCbQuery('Ошибка выбора команды/лодки');
+  const event = await Event.findByPk(subslot.event_id);
+  if (!event) return ctx.answerCbQuery('Мероприятие не найдено');
+  // Считаем свободные места в этом subslot+slot
+  const bookings = await Booking.findAll({ where: { event_id: event.id, timeslot_id: slot.id, subslot_id: subslot.id } });
+  const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
+  const free = subslot.capacity - used;
+  if (free <= 0) return ctx.answerCbQuery('Нет свободных мест в этой команде/лодке');
+  ctx.session = { slotId, eventId: event.id, subslotId: subslot.id, free, friends: [] };
+  const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
+  const menu = getBookingMenu(free, [],event.id);
+  await ctx.editMessageText(`${slotInfo}\n\n${menu.text}`, {
     parse_mode: 'Markdown',
-    ...getSlotsInlineWithCounts(slots,true, {}, [], 0),
+    ...menu.keyboard,
   });
 });
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Etc/GMT0' });
+}
 
 

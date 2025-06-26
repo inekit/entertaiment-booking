@@ -3,6 +3,7 @@ import { User } from './models/user.model';
 import { Event } from './models/event.model';
 import { TimeSlot } from './models/timeslot.model';
 import { Booking } from './models/booking.model';
+import { SubSlot } from './models/subslot.model';
 require('dotenv').config()
 
 export const sequelize = new Sequelize({
@@ -12,9 +13,9 @@ export const sequelize = new Sequelize({
   username: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASS || 'postgres',
   database: process.env.DB_NAME || 'entertainment',
-  models: [User, Event, TimeSlot, Booking],
-  logging: true,
+  models: [User, Event, TimeSlot, Booking, SubSlot],
+  logging: false,
   sync: {
-    alter: true,
+    force: true,
   },
 }); 

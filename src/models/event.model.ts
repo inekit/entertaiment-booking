@@ -1,6 +1,7 @@
 import { Table, Column, Model, DataType, HasMany, PrimaryKey, CreatedAt, UpdatedAt } from 'sequelize-typescript';
 import { Booking } from './booking.model';
 import { TimeSlot } from './timeslot.model';
+import { SubSlot } from './subslot.model';
 
 export interface EventCreationAttrs {
   title: string;
@@ -45,4 +46,7 @@ export class Event extends Model<Event, EventCreationAttrs> {
 
   @HasMany(() => TimeSlot)
   timeslots!: TimeSlot[];
+
+  @HasMany(() => SubSlot)
+  subslots!: SubSlot[];
 } 
