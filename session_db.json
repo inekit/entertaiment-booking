@@ -1,3 +1,11 @@
 {
-  "sessions": []
+  "sessions": [
+    {
+      "id": "2027934342:2027934342",
+      "data": {
+        "slotId": 1,
+        "eventId": 3
+      }
+    }
+  ]
 }

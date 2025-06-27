@@ -37,26 +37,36 @@ function formatTime(date: Date) {
 }
 
 export function getSlotsInlineWithCounts(slots: TimeSlot[], isAdminMode:boolean, slotCounts: Record<number, number>, disabledSlotIds: number[] = [], slotCapacity?: number) {
-  const rows = slots.map((slot) => [
-    (() => {
-      const used = slotCounts[slot.id] || 0;
-      const free = slotCapacity ? slotCapacity - used : undefined;
-      const timeStr = `${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
-      if (disabledSlotIds.includes(slot.id)) {
-        return Markup.button.callback(
-          `${timeStr} (нет мест или пересечение)`,
-          'disabled_slot',
-        );
-      }
+  const buttons = slots.map((slot) => {
+    const used = slotCounts[slot.id] || 0;
+    const free = slotCapacity ? slotCapacity - used : undefined;
+    const timeStr = `${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
+    if (disabledSlotIds.includes(slot.id)) {
       return Markup.button.callback(
-        free !== undefined
-          ? `${timeStr} (свободно: ${free})`
-          : `${timeStr}`,
-        `slot${isAdminMode?'_admin':''}_${slot.id}`,
+        `${timeStr} (нет мест или пересечение)`,
+        'disabled_slot',
       );
-    })(),
-  ]);
-  // Кнопка назад
+    }
+    return Markup.button.callback(
+      free !== undefined
+        ? `${timeStr} (${slots.length > 5? 'св.':'свободно'}: ${free})`
+        : `${timeStr}`,
+      `slot${isAdminMode?'_admin':''}_${slot.id}`,
+    );
+  });
+  const rows = [];
+  if (buttons.length > 5) {
+    // 2 столбца
+    for (let i = 0; i < buttons.length; i += 2) {
+      rows.push([buttons[i], buttons[i + 1]].filter(Boolean));
+    }
+  } else {
+    // по одному в строке
+    for (let i = 0; i < buttons.length; i++) {
+      rows.push([buttons[i]]);
+    }
+  }
+  // Кнопка назад отдельной строкой
   rows.push([Markup.button.callback('⬅️ Назад', isAdminMode? 'admin_bta':'back_to_events')]);
   return Markup.inlineKeyboard(rows);
 }
