@@ -36,6 +36,11 @@ declare module 'telegraf/typings/context' {
   }
 }
 
+const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => id.trim()).filter(Boolean).map(Number);
+function isAdmin(userId: number) {
+  return ADMIN_IDS.includes(userId);
+}
+
 async function importEventsIfNeeded(sequelize: Sequelize) {
   if (process.env.IMPORT_EVENTS === '1') {
     const sqlPath = path.join(__dirname, '../sql/events_import.sql');
@@ -127,7 +132,7 @@ _Хорошего тебе отдыха!_
 
 *Помни:* если ты хочешь отменить запись — это легко сделать здесь же.
 `;
-  if (ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+  if (ctx.from && isAdmin(ctx.from.id)) {
     return ctx.reply('Добро пожаловать, админ!', getAdminMenu());
   }
   return ctx.reply(welcome, { parse_mode: 'Markdown', ...getMainMenu() });
@@ -137,7 +142,7 @@ _Хорошего тебе отдыха!_
 async function sendAdminMenu(ctx:Context,isEdit?:boolean){
 
 const reply = (isEdit? ctx.editMessageText: ctx.reply).bind(ctx)
-  if (!ctx.from || ctx.from.id !== Number(process.env.ADMIN_ID)) return;
+  if (!ctx.from || !isAdmin(ctx.from.id)) return;
   const events = await Event.findAll();
   if (!events.length) return reply('Нет мероприятий.');
   await reply('Выберите мероприятие для просмотра:', getEventsInline(events,true));
@@ -151,7 +156,7 @@ bot.hears('👑 Админ-панель', async (ctx) => {
 // Выбор мероприятия в админ-режиме
 bot.action(/event_admin_(\d+)/, async (ctx, next) => {
 
-  if (ctx.session &&  ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+  if (ctx.session &&  ctx.from && isAdmin(ctx.from.id)) {
 
     const eventId = Number(ctx.match[1]);
     const event = await Event.findByPk(eventId);
@@ -188,7 +193,7 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
 
 // Выбор слота в админ-режиме
 bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
-  if (ctx.session && ctx.from && ctx.from.id === Number(process.env.ADMIN_ID)) {
+  if (ctx.session && ctx.from && isAdmin(ctx.from.id)) {
     const slotId = Number(ctx.match[1]);
     const slot = await TimeSlot.findByPk(slotId);
     const event = slot ? await Event.findByPk(slot.event_id) : null;
@@ -533,6 +538,9 @@ bot.action('confirm_booking', async (ctx) => {
   }
 
   ctx.session = {};
+  if (ctx.from && isAdmin(ctx.from.id)) {
+    return await ctx.reply('Главное меню', getAdminMenu());
+  }
   await ctx.reply('Главное меню', getMainMenu());
 
 });
