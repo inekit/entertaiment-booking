@@ -4,7 +4,13 @@
       "id": "2027934342:2027934342",
       "data": {
         "slotId": 1,
-        "eventId": 3
+        "eventId": 4,
+        "subslotId": 1,
+        "free": 1,
+        "friends": [
+          "❌ Мои записи / Отменить запись"
+        ],
+        "addingFriend": false
       }
     }
   ]

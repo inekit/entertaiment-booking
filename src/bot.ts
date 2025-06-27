@@ -155,6 +155,7 @@ bot.hears('👑 Админ-панель', async (ctx) => {
 
 // Выбор мероприятия в админ-режиме
 bot.action(/event_admin_(\d+)/, async (ctx, next) => {
+  await safeAnswerCbQuery(ctx);
 
   if (ctx.session &&  ctx.from && isAdmin(ctx.from.id)) {
 
@@ -166,7 +167,7 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
         await ctx.editMessageText('Нет слотов для этого мероприятия.');
       } catch (e: any) {
         if (e.description?.includes('message is not modified')) {
-          await ctx.answerCbQuery('Уже выбрано.');
+          //await safeAnswerCbQuery(ctx, 'Уже выбрано.');
         } else {
           throw e;
         }
@@ -180,7 +181,7 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
       });
     } catch (e: any) {
       if (e.description?.includes('message is not modified')) {
-        await ctx.answerCbQuery('Уже выбрано.');
+        //await safeAnswerCbQuery(ctx, 'Уже выбрано.');
       } else {
         throw e;
       }
@@ -193,6 +194,8 @@ bot.action(/event_admin_(\d+)/, async (ctx, next) => {
 
 // Выбор слота в админ-режиме
 bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
+  await safeAnswerCbQuery(ctx);
+
   if (ctx.session && ctx.from && isAdmin(ctx.from.id)) {
     const slotId = Number(ctx.match[1]);
     const slot = await TimeSlot.findByPk(slotId);
@@ -216,18 +219,10 @@ bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
     const slotInfo = slot && event
       ? `*${event.title}*\nВремя: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nСвободно мест: ${free}`
       : '';
-    try {
-      await ctx.editMessageText(`${slotInfo}\n\n${getParticipantsList(participants)}`, {
-        parse_mode: 'Markdown',
-        ...getParticipantsInlineBack(),
-      });
-    } catch (e: any) {
-      if (e.description?.includes('message is not modified')) {
-        await ctx.answerCbQuery('Уже выбрано.');
-      } else {
-        throw e;
-      }
-    }
+    await ctx.editMessageText(`${slotInfo}\n\n${getParticipantsList(participants)}`, {
+      parse_mode: 'Markdown',
+      ...getParticipantsInlineBack(),
+    });
     ctx.session.slotId = slotId;
     return;
   }
@@ -247,9 +242,12 @@ bot.hears('🗓 Мероприятия и запись', async (ctx) => {
 
 // Список мероприятий (inline)
 bot.action(/event_(\d+)/, async (ctx) => {
+
   const eventId = Number(ctx.match[1]);
   const event = await Event.findByPk(eventId);
-  if (!event) return ctx.answerCbQuery('Мероприятие не найдено');
+  if (!event) return safeAnswerCbQuery(ctx, 'Мероприятие не найдено');
+  await safeAnswerCbQuery(ctx);
+
   const slots = await TimeSlot.findAll({ where: { event_id: event.id } });
   const bookings = await Booking.findAll({ where: { event_id: event.id } });
   const used = bookings.reduce((acc, b) => acc + b.friends_count + 1, 0);
@@ -293,7 +291,7 @@ slots
 
 // Обработка нажатия на неактивную кнопку
 bot.action('disabled_slot', async (ctx) => {
-  await ctx.answerCbQuery('Вы не можете записаться на этот слот, так как у вас уже есть пересекающаяся запись.');
+  await safeAnswerCbQuery(ctx, 'Вы не можете записаться на этот слот, так как у вас уже есть пересекающаяся запись.');
 });
 
 // Меню для записи с друзьями
@@ -334,6 +332,7 @@ async function getFreePlacesCount(event:Event,slotId:number){
 
 // Выбор слота (inline)
 bot.action(/slot_(\d+)/, async (ctx) => {
+
   const slotId = Number(ctx.match[1]);
   const slot = await TimeSlot.findByPk(slotId);
   if (!slot) return ctx.answerCbQuery('Слот не найден');
@@ -344,6 +343,8 @@ bot.action(/slot_(\d+)/, async (ctx) => {
     // Считаем свободные места по слоту
     const free = await getFreePlacesCount(event,slot.id);
     if (free <= 0) return ctx.answerCbQuery('Нет свободных мест на этот слот');
+    await safeAnswerCbQuery(ctx);
+
     ctx.session = { slotId, eventId: event.id, free, friends: [] };
     const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
     const menu = getBookingMenu(free, [],event.id);
@@ -353,6 +354,7 @@ bot.action(/slot_(\d+)/, async (ctx) => {
     });
     return;
   }
+  await safeAnswerCbQuery(ctx);
 
   console.log('slot')
 
@@ -384,10 +386,13 @@ bot.action(/slot_(\d+)/, async (ctx) => {
 
 // Добавить друга
 bot.action('add_friend', async (ctx) => {
+
   const session = ctx.session || {};
   if (!session.slotId || !session.eventId || session.friends?.length >= session.free) {
     return ctx.answerCbQuery('Больше добавить нельзя!');
   }
+  await safeAnswerCbQuery(ctx);
+
   ctx.session.addingFriend = true;
 
   let sentMessage
@@ -410,6 +415,8 @@ bot.action('add_friend', async (ctx) => {
 
 
 bot.action(/basket_back_(\d+)/, async (ctx) => {
+    await safeAnswerCbQuery(ctx);
+
     await backToBasket(ctx,true)
 })
 
@@ -484,6 +491,7 @@ bot.on('text', async (ctx, next) => {
 
 // Подтвердить запись
 bot.action('confirm_booking', async (ctx) => {
+
   const session = ctx.session || {};
   if (!session.slotId || !session.eventId || !session.free) {
     return ctx.reply('Пожалуйста, выберите слот заново.');
@@ -491,6 +499,9 @@ bot.action('confirm_booking', async (ctx) => {
   if (!session.friends || session.friends.length === 0) {
     return ctx.answerCbQuery('Добавьте хотя бы одного участника!');
   }
+
+  await safeAnswerCbQuery(ctx);
+
   const count = session.friends.length;
   if (count > session.free) {
     return ctx.reply('Недостаточно свободных мест!');
@@ -579,23 +590,28 @@ bot.hears('❌ Мои записи / Отменить запись', async (ctx)
 
 // Обработка отмены записи
 bot.action(/cancel_(\d+)/, async (ctx) => {
+
   const bookingId = Number(ctx.match[1]);
   const booking = await Booking.findByPk(bookingId);
   if (!booking || booking.user_id !== ctx.state.user.id) {
     return ctx.answerCbQuery('Запись не найдена или не принадлежит вам');
   }
+
+  await safeAnswerCbQuery(ctx);
   await booking.destroy();
   await ctx.editMessageText('Запись отменена.');
 });
 
 // Кнопка назад к списку мероприятий
 bot.action('back_to_events', async (ctx) => {
+  await safeAnswerCbQuery(ctx);
+
   const events = await Event.findAll();
   try {
     await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
   } catch (e: any) {
     if (e.description?.includes('message is not modified')) {
-      await ctx.answerCbQuery('Уже выбрано.');
+      //await safeAnswerCbQuery(ctx, 'Уже выбрано.');
     } else {
       throw e;
     }
@@ -604,7 +620,7 @@ bot.action('back_to_events', async (ctx) => {
 
 // Кнопка назад к списку мероприятий
 bot.action('admin_bta', async (ctx) => {
-    await ctx.answerCbQuery();
+    await safeAnswerCbQuery(ctx);
     sendAdminMenu(ctx,true)
   });
   
@@ -613,8 +629,12 @@ bot.action('admin_bta', async (ctx) => {
 
 // Кнопка назад к списку слотов в админ-панели
 bot.action('admin_bts', async (ctx) => {
+
   const session = ctx.session || {};
   if (!session.eventId) return ctx.answerCbQuery('Сначала выберите мероприятие');
+
+  await safeAnswerCbQuery(ctx);
+
   const event = await Event.findByPk(session.eventId);
   const slots = await TimeSlot.findAll({ where: { event_id: session.eventId } });
   await ctx.editMessageText(`*${event?.title || 'Мероприятие'}*\n\nВыберите слот:`, {
@@ -625,6 +645,7 @@ bot.action('admin_bts', async (ctx) => {
 
 bot.action(/s2lot_(\d+)_(\d+)/, async (ctx) => {
     console.log('sslot')
+
   const slotId = Number(ctx.match[1]);
   const subslotId = Number(ctx.match[2]);
   const slot = await TimeSlot.findByPk(slotId);
@@ -640,6 +661,9 @@ bot.action(/s2lot_(\d+)_(\d+)/, async (ctx) => {
   ctx.session = { slotId, eventId: event.id, subslotId: subslot.id, free, friends: [] };
   const slotInfo = `*${event.title}*\n${event.description ? event.description + '\n' : ''}Время: ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}\nКоманда/лодка: ${subslot.title}`;
   const menu = getBookingMenu(free, [],event.id);
+
+  await safeAnswerCbQuery(ctx);
+
   await ctx.editMessageText(`${slotInfo}\n\n${menu.text}`, {
     parse_mode: 'Markdown',
     ...menu.keyboard,
@@ -648,6 +672,15 @@ bot.action(/s2lot_(\d+)_(\d+)/, async (ctx) => {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Etc/GMT0' });
+}
+
+// Универсальная функция для безопасного вызова answerCbQuery
+async function safeAnswerCbQuery(ctx: any, text?: string) {
+  try {
+    await ctx.answerCbQuery(text);
+  } catch (e) {
+    // ignore
+  }
 }
 
 
