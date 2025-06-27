@@ -82,21 +82,43 @@ export function getPeopleCountInline(max: number,eventId:number) {
   return Markup.inlineKeyboard([buttons]);
 }
 
-export function getParticipantsList(participants: { name: string; telegram_id: number; friends_count: number; friends_names?: string[]; subslot_title?: string }[]) {
+export function getParticipantsList(participants: { name: string; telegram_id: number; members: string[]; subslot_title?: string }[]) {
   if (!participants.length) return 'Нет записавшихся на этот слот.';
   const text = participants
     .map((p, i) => {
-      let names = [p.name || 'Без имени'];
-      if (p.friends_names && p.friends_names.length) {
-        names = names.concat(p.friends_names);
-      }
       let base = `${i + 1}. `;
       if (p.subslot_title) base += `[${p.subslot_title}] `;
-      base += `Участники: ${names.join(', ')} (id: ${p.telegram_id})`;
+      // Только участники (members), без владельца
+      base += `Участники: ${p.members.length ? p.members.join(', ') : '—'}`;
+      // id владельца не выводим
       return base;
     })
     .join('\n');
   return text;
+}
+
+// Новый список для админки: список записей с кнопками-цифрами
+export function getAdminBookingsListWithButtons(bookings: {id: number, members: string[], subslot_title?: string}[]) {
+  if (!bookings.length) return {text: 'Нет записей на этот слот.', keyboard: undefined};
+  const text = bookings.map((b, i) => {
+    let base = `${i + 1}. `;
+    if (b.subslot_title) base += `[${b.subslot_title}] `;
+    base += `Участники: ${b.members.length ? b.members.join(', ') : '—'}`;
+    return base;
+  }).join('\n');
+  // Кнопки-цифры для перехода к меню записи в 2 ряда
+  const buttons = [];
+  for (let i = 0; i < bookings.length; i += 2) {
+    const row = [];
+    row.push(Markup.button.callback(`${i + 1}`, `admin_booking_${bookings[i].id}`));
+    if (bookings[i + 1]) {
+      row.push(Markup.button.callback(`${i + 2}`, `admin_booking_${bookings[i + 1].id}`));
+    }
+    buttons.push(row);
+  }
+  // Кнопка назад
+  buttons.push([Markup.button.callback('⬅️ Назад', 'admin_bts')]);
+  return {text, keyboard: Markup.inlineKeyboard(buttons)};
 }
 
 export function getParticipantsInlineBack() {

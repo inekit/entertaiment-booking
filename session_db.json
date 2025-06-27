@@ -3,14 +3,8 @@
     {
       "id": "2027934342:2027934342",
       "data": {
-        "slotId": 3,
         "eventId": 3,
-        "subslotId": 3,
-        "free": 1,
-        "friends": [
-          "dede"
-        ],
-        "addingFriend": false
+        "slotId": 1
       }
     }
   ]
