@@ -43,7 +43,7 @@ export function getSlotsInlineWithCounts(slots: TimeSlot[], isAdminMode:boolean,
     const timeStr = `${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
     if (disabledSlotIds.includes(slot.id)) {
       return Markup.button.callback(
-        `${timeStr} (нет мест или пересечение)`,
+        `${timeStr} (пересечение)`,
         'disabled_slot',
       );
     }

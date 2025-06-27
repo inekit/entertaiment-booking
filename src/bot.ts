@@ -265,13 +265,13 @@ bot.action(/event_(\d+)/, async (ctx) => {
       where: { user_id: ctx.state.user.id },
       include: [{ model: TimeSlot, as: 'timeslot' }],
     });
-    disabledSlotIds = [];
-/*
-slots
+    disabledSlotIds = 
+    slots
       .filter((slot) =>
         userBookings.some((b) => {
           const s = b.timeslot;
           if (!s) return false;
+         // if (slot.id===s.id) return false;
           const newStart = slot.start_time.getTime();
           const newEnd = slot.end_time.getTime();
           const existStart = s.start_time.getTime();
@@ -279,7 +279,7 @@ slots
           return newStart < existEnd && newEnd > existStart;
         })
       )
-      .map((slot) => slot.id);*/
+      .map((slot) => slot.id);
   }
 
 
@@ -291,7 +291,7 @@ slots
 
 // Обработка нажатия на неактивную кнопку
 bot.action('disabled_slot', async (ctx) => {
-  await safeAnswerCbQuery(ctx, 'Вы не можете записаться на этот слот, так как у вас уже есть пересекающаяся запись.');
+  await safeAnswerCbQuery(ctx, 'Вы уже записаны на это время.');
 });
 
 // Меню для записи с друзьями
@@ -506,7 +506,7 @@ bot.action('confirm_booking', async (ctx) => {
   if (count > session.free) {
     return ctx.reply('Недостаточно свободных мест!');
   }
-  /*
+  
   let exists;
   if (session.subslotId) {
     exists = await Booking.findOne({
@@ -529,7 +529,7 @@ bot.action('confirm_booking', async (ctx) => {
   }
   if (exists) {
     return ctx.reply('Вы уже записаны на этот слот!');
-  }*/
+  }
   await Booking.create({
     user_id: ctx.state.user.id,
     event_id: session.eventId,
