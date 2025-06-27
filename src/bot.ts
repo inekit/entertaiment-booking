@@ -147,7 +147,7 @@ async function sendAdminMenu(ctx:Context,isEdit?:boolean){
 
 const reply = (isEdit? ctx.editMessageText: ctx.reply).bind(ctx)
   if (!ctx.from || !isAdmin(ctx.from.id)) return;
-  const events = await Event.findAll();
+  const events = await Event.findAll({ order: [['id', 'ASC']] });
   if (!events.length) return reply('Нет мероприятий.');
   await reply('Выберите мероприятие для просмотра:', getEventsInline(events,true));
   ctx.session = { admin: true };
@@ -240,7 +240,7 @@ bot.action(/slot_admin_(\d+)/, async (ctx, next) => {
 
 // Главное меню
 bot.hears('🗓 Мероприятия и запись', async (ctx) => {
-  const events = await Event.findAll();
+  const events = await Event.findAll({ order: [['id', 'ASC']] });
   if (!events.length) return ctx.reply('Нет доступных мероприятий.');
   if (ctx.callbackQuery) {
     await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
@@ -674,7 +674,7 @@ bot.action('close_mybookings', async (ctx) => {
 bot.action('back_to_events', async (ctx) => {
   await safeAnswerCbQuery(ctx);
 
-  const events = await Event.findAll();
+  const events = await Event.findAll({ order: [['id', 'ASC']] });
   try {
     await ctx.editMessageText('Выберите мероприятие:', getEventsInline(events));
   } catch (e: any) {
